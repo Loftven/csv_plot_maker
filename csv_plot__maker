@@ -1,0 +1,187 @@
+import pyshark
+import numpy as np
+from matplotlib import figure
+import pandas as pd
+import gc
+
+
+
+def plot_sizes(length, time, name, start, stop):
+
+    """
+    Plots the size of packets against their arrival time.
+
+    Args:
+        length (np.ndarray): An array of packet sizes.
+        time (np.ndarray): An array of arrival times.
+        name (str): The name of the output file.
+        start (float): The start time of the interval.
+        stop (float): The end time of the interval.
+
+    Returns:
+        None.
+
+    """
+
+    fig = figure.Figure()
+    ax = fig.add_axes([0.1, 0.1, 0.88, 0.88])
+    ax.set(xlabel='arrival time', ylabel='size of packet', xlim=(start, stop), ylim=(0, 1500))
+    ax.set_yticks(np.arange(0, 1500, step=200))
+    ax.plot(time, length,'o', markersize=1)
+    fig.savefig(name, dpi=900)
+    fig.clf()
+    gc.collect()
+    
+
+
+def plot_delta(length, time_delta, name):
+
+    """
+    Plots the delta time between packet arrivals.
+
+    Args:
+        length (np.ndarray): An array of packet sizes.
+        time_delta (np.ndarray): An array of arrival times.
+        name (str): The name of the output file.
+
+    Returns:
+        None.
+
+    """
+
+    fig = figure.Figure()
+    ax = fig.add_axes([0.1, 0.1, 0.88, 0.88])
+    ax.set(xlabel='size of packet', ylabel='delta time of arrival', xlim=(0,1500), ylim=(0,60))
+    ax.set_xticks(np.arange(0, 1500, step=200))
+    ax.plot(length, time_delta, 'o', markersize=1, alpha=0.1, c='r') # (x, y)
+    fig.savefig(name, dpi=900)
+
+
+def delta_name_png(name):
+
+    name2 = [x for x in name.split('.')]
+    return name2[0] + 'delta' +'.png'
+
+
+def name_png_for_intervals(name, num):
+
+    name2 = [x for x in name.split('.')]
+    return name2[0] + '_' +str(num) + '.png'
+
+
+def get_data(pcap):
+    
+    """
+    Extracts packet length, arrival time, and delta time data from a pcap file.
+
+    Args:
+        pcap (pyshark.FileCapture): The pcap file to extract data from.
+
+    Returns:
+        tuple[list, list, list]: A tuple containing the packet length, arrival time, and delta time data.
+
+    """
+
+    length, time, delta_time = [], [], []
+
+    for i, pack in enumerate(pcap):
+        
+        length.append(int(pack.frame_info.len))
+        time.append(float(pack.frame_info.time_relative))
+        delta_time.append(float(pack.frame_info.time_delta))
+    
+    print('data extact successfully')
+
+    return length, time, delta_time
+
+
+def make_csv(cap, name_csv):
+    """
+    Creates a CSV file containing packet length, arrival time, and delta time data.
+
+    Args:
+        cap (pyshark.FileCapture): The captured network traffic.
+        name_csv (str): The name of the CSV file.
+
+    Returns:
+        str: The path to the CSV file.
+
+    """
+    length, timing, delta_time = get_data(cap)
+    csv_table = {'Length': length, 'Time': timing, 'DTime': delta_time}
+    df = pd.DataFrame(data=csv_table)
+    name_csv = name_csv.split('.')[0] + '.csv'
+    df.to_csv(name_csv, index=False)
+
+    return name_csv
+
+
+def make_plot_from_csv(path, start=0, dur=60, step=15):
+    """
+    Creates a Matplotlib plot from a CSV file containing packet length and arrival time data.
+
+    Args:
+        path (str): The path to the CSV file.
+        start (int): The start time of the interval, in seconds.
+        dur (int): The duration of the interval, in seconds.
+        step (int): The step size of the intervals, in seconds.
+
+    Returns:
+        None.
+
+    """
+    df = pd.read_csv(path)
+    len_ar = df['Length'].to_numpy()
+    time_ar = df['Time'].to_numpy()
+    i = 0
+    stop = start + dur
+
+    while start+dur < time_ar[-1]:
+        time_interval = time_ar[np.where((time_ar <= stop ) & (time_ar >= start))]
+        length_interval = len_ar[np.where((time_ar <= stop ) & (time_ar >= start))] # this part i need /60 and * 25 to  mapp interval from 60 to 1500
+        plot_sizes(length_interval, time_interval, name_png_for_intervals(path, i), start, stop)
+        i+=1
+        start+= step
+        stop = start + dur
+    
+    
+def make_plot_delta_form_csv(path):
+    """
+    Plots the delta time between packet arrivals based on a csv file.
+
+    Args:
+        path (str): The path to the csv file.
+
+    Returns:
+        None.
+
+    """
+    df = pd.read_csv(path)
+    len_ar = df['Length'].to_numpy()
+    delta_time = df['DTime'].to_numpy()
+    plot_delta(len_ar, delta_time, delta_name_png(path))
+
+
+
+
+
+if __name__ == '__main__':
+    
+    
+    try:
+
+        file_path = input("Iput path to the file into the window. \nThe program support *.pcap and *.csv.\n Press enter: ")
+
+        if '.csv' in file_path:
+
+            make_plot_delta_form_csv(file_path)
+            make_plot_from_csv(file_path)
+
+        elif '.pcap' in file_path:
+        
+            cap = pyshark.FileCapture(file_path) 
+            make_csv(cap, str(cap.input_filepath).split('/')[-1])   
+    
+    except Exception as e:
+        print(e)
+    
